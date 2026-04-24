@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice Audit Tool | Envision Benefits Group</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231B4477' rx='20' width='100' height='100'/><text y='70' x='15' font-size='60' fill='white'>E</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;color:#1a1a1a;min-height:100vh}
+.app{max-width:960px;margin:0 auto;padding:24px 20px}
+.hdr{background:linear-gradient(135deg,#1B4477 0%,#2a5a8f 100%);padding:20px 28px;border-radius:12px;color:#fff;display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;box-shadow:0 2px 12px rgba(27,68,119,.25)}
+.hdr-sub{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#C6DC84;font-weight:600}
+.hdr-title{font-size:20px;font-weight:700;margin-top:2px;letter-spacing:-.3px}
+.steps{display:flex;gap:6px}
+.dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;transition:all .3s}
+.dot.on{background:#65BAD4;color:#1B4477}
+.dot.off{background:rgba(255,255,255,.15);color:rgba(255,255,255,.4)}
+.card{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:24px 28px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.card h3{font-size:18px;font-weight:700;color:#1B4477;margin-bottom:4px}
+.card .sub{font-size:13px;color:#777;margin-bottom:20px}
+.row{display:flex;gap:14px;margin-bottom:18px}
+.row>div{flex:1}
+.lbl{display:block;font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
+select,input[type=text]{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #ddd;font-size:14px;color:#333;background:#fff;outline:none;transition:border .2s}
+select:focus,input:focus{border-color:#65BAD4}
+.info{background:#eef6ff;border:1px solid #c5ddf5;border-radius:8px;padding:11px 14px;font-size:12px;color:#1B4477;margin-bottom:18px}
+.rules{background:#fffbeb;border:1px solid #f0e68c;border-radius:8px;padding:11px 14px;font-size:12px;color:#8b6914;margin-bottom:18px}
+.drop{border:2px dashed #ccc;border-radius:10px;padding:22px 14px;text-align:center;cursor:pointer;font-size:13px;color:#999;transition:all .2s}
+.drop:hover{border-color:#65BAD4;background:#f8fcff}
+.drop.ok{border-color:#C6DC84;border-style:solid;background:#f9fff0}
+.frow{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f8f9fa;border-radius:8px;margin-top:8px;border:1px solid #eee}
+.frow .fn{flex:1;font-size:13px;font-weight:600;color:#1B4477;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow select{width:210px;font-size:12px;padding:6px 8px}
+.frow .rm{background:none;border:none;color:#c00;cursor:pointer;font-size:18px;padding:0 4px;line-height:1}
+.btns{display:flex;gap:10px;margin-top:18px}
+.btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #ddd;transition:all .15s}
+.btn:active{transform:scale(.98)}
+.bp{background:#1B4477;color:#fff;border:none}
+.bp:hover{background:#245a96}
+.bp:disabled{background:#aaa;cursor:not-allowed}
+.bs{background:#fff;color:#1B4477;border:1px solid #1B4477}
+.bs:hover{background:#f0f4f8}
+.prog{background:#1B4477;color:#fff;border-radius:10px;padding:16px;font-size:13px;margin-bottom:14px}
+.prog .pbar{height:3px;background:rgba(255,255,255,.2);border-radius:2px;margin-top:10px;overflow:hidden}
+.prog .pfill{height:100%;background:#65BAD4;width:60%;border-radius:2px;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{width:40%}50%{width:80%}}
+.err{background:#fff0f0;border:1px solid #fcc;border-radius:8px;padding:11px 14px;color:#c00;font-size:13px;margin-bottom:14px}
+.sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:#fff;border:1px solid #eee;border-radius:10px;padding:16px 12px;text-align:center}
+.stat .n{font-size:28px;font-weight:700;line-height:1}
+.stat .l{font-size:11px;color:#888;margin-top:5px;text-transform:uppercase;letter-spacing:.5px}
+table.t{width:100%;border-collapse:collapse;font-size:12px}
+table.t th{padding:9px 10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#666;border-bottom:2px solid #1B4477}
+table.t td{padding:8px 10px;border-bottom:1px solid #f0f0f0}
+table.t tr.disc{background:#fff5f5}
+table.t tr.warn{background:#fffde7}
+.mono{font-family:'SF Mono',Consolas,monospace;font-size:12px}
+.badge{display:inline-block;font-size:10px;padding:3px 10px;border-radius:10px;font-weight:600}
+.bd{background:#ffebee;color:#c62828}
+.nflag{display:block;font-size:10px;color:#f57f17;margin-top:2px}
+.footer{text-align:center;font-size:11px;color:#aaa;padding:20px 0;margin-top:32px;border-top:1px solid #eee}
+@media(max-width:640px){.sgrid{grid-template-columns:repeat(2,1fr)}.row{flex-direction:column}.frow select{width:140px}.hdr{flex-direction:column;gap:12px;text-align:center}}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script>
+const MO=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const CA=[
+{v:"highmark",l:"Highmark BCBSWNY",ec:"Highmark",pt:null,w:false},
+{v:"guardian",l:"Guardian",ec:"Guardian",pt:null,w:false},
+{v:"colonial",l:"Colonial Life (STD)",ec:"Colonial Life",pt:"Voluntary Short Term Disability",w:true},
+{v:"legalshield",l:"LegalShield / IDShield",ec:"IDShield",pt:"Legal",w:true},
+{v:"beni",l:"Beni Solutions / Options Plus",ec:"Options Plus",pt:"Medical",w:false},
+{v:"other",l:"Other Carrier",ec:null,pt:null,w:false}
+];
+let S={step:1,mo:3,yr:2026,cl:"",cf:null,cfs:[],proc:false,prog:"",err:null,res:null};
+
+function wim(y,m){let f=0;const d=new Date(y,m,0).getDate();for(let i=1;i<=d;i++)if(new Date(y,m-1,i).getDay()===5)f++;return f}
+function nn(n){if(!n)return"";return n.toLowerCase().trim().replace(/\s*,\s*/g,", ").replace(/ jr$| sr$| ii$| iii$| iv$/g,"").replace(/[-']/g," ").replace(/\s+/g," ").trim()}
+function pnp(s){const n=nn(s);if(n.includes(",")){const p=n.split(",");return{f:(p[1]||"").trim().split(" ")[0],l:p[0].trim()}}const p=n.split(" ");return{f:p[0]||"",l:p[p.length-1]||""}}
+function lv(a,b){const m=Array.from({length:a.length+1},(_,i)=>Array.from({length:b.length+1},(_,j)=>i===0?j:j===0?i:0));for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)m[i][j]=a[i-1]===b[j-1]?m[i-1][j-1]:1+Math.min(m[i-1][j],m[i][j-1],m[i-1][j-1]);return m[a.length][b.length]}
+function fz(a,b){if(!a||!b)return 0;const x=Math.max(a.length,b.length);return x===0?100:((x-lv(a,b))/x)*100}
+function mn(a,b){const p1=pnp(a),p2=pnp(b);return fz(p1.l,p2.l)*.6+fz(p1.f,p2.f)*.4}
+function fb(t,cs,thr=78){let b=null,bs=0;for(const c of cs){const s=mn(t,c);if(s>=thr&&s>bs){b=c;bs=s}}return{m:b,s:bs}}
+
+function pcsv(t){const ls=t.split("\n");if(ls.length<2)return[];function sp(l){const r=[];let c="",q=false;for(let i=0;i<l.length;i++){const ch=l[i];if(ch==='"')q=!q;else if(ch===","&&!q){r.push(c.trim());c=""}else c+=ch}r.push(c.trim());return r}const h=sp(ls[0]);const rows=[];for(let i=1;i<ls.length;i++){if(!ls[i].trim())continue;const v=sp(ls[i]);const o={};h.forEach((k,j)=>o[k.trim()]=(v[j]||"").trim());rows.push(o)}return rows}
+
+function pen(csv){return pcsv(csv).filter(r=>(r["Relationship"]||"")==="Employee"&&!["Waived","Terminated",""].includes(r["Election Status"]||"")).map(r=>{const cr=v=>parseFloat((v||"0").replace(/[$,]/g,""))||0;return{en:`${r["Last Name"]||""}, ${r["First Name"]||""}`,pt:r["Plan Type"]||"",pd:r["Plan Display Name"]||"",ct:r["Coverage Tier"]||"",ca:r["Carrier"]||"",tr:cr(r["Total Rate"]),ed:r["Effective Date"]||r["Plan Effective Start Date"]||"",ps:r["Plan Effective Start Date"]||""}})}
+
+function iaa(ds,y,m){if(!ds)return false;let d;if(ds.includes("/")){const p=ds.split("/");if(p.length===3)d=new Date(+p[2],+p[0]-1,+p[1])}else d=new Date(ds);if(!d||isNaN(d))return false;return d>new Date(y,m,0)}
+
+function rec(nm,inv,enr,o={}){const{ec,pt,ay,am,wc,wk=4}=o;const R=[];let fl=enr.filter(e=>{if(ec){const f=Array.isArray(ec)?ec:[ec];if(!f.some(x=>e.ca.includes(x)))return false}if(pt){const f=Array.isArray(pt)?pt:[pt];if(!f.includes(e.pt))return false}return true});if(ay&&am)fl=fl.filter(e=>!iaa(e.ps||e.ed,ay,am));const bn={};for(const r of fl){const n=nn(r.en);if(!bn[n])bn[n]=[];bn[n].push(r)}const ns=Object.keys(bn),mt=new Set();
+for(const iv of inv){const{m:ma,s:sc}=fb(iv.name,ns);if(ma){mt.add(ma);const rw=bn[ma];let et=rw.reduce((s,r)=>s+r.tr,0);if(wc)et=Math.round(et*(wk/(52/12))*100)/100;const v=Math.round((iv.amount-et)*100)/100;const ex=nn(iv.name)===ma;let nnt="";if(!ex&&sc<95)nnt=`Name variation: "${iv.name}" vs "${rw[0].en}" (${Math.round(sc)}%)`;else if(!ex)nnt=`Slight name diff: "${iv.name}" vs "${rw[0].en}"`;let st,fg;if(Math.abs(v)<.02){st="Match";fg=nnt}else if(Math.abs(v)<1){st="Minor Variance";fg=`$${v>0?"+":""}${v.toFixed(2)} rounding. ${nnt}`}else{st="DISCREPANCY";fg=`$${v>0?"+":""}${v.toFixed(2)} variance. ${nnt}`}
+R.push({cr:nm,in:iv.name,en:rw[0].en,sc:Math.round(sc*10)/10,ia:iv.amount,ea:et,v,st,fg,pl:[...new Set(rw.map(r=>r.pd))].join(", "),ti:[...new Set(rw.map(r=>r.ct))].join(", ")})}else R.push({cr:nm,in:iv.name,en:"NOT FOUND",sc:0,ia:iv.amount,ea:0,v:iv.amount,st:"DISCREPANCY",fg:"On invoice but NOT enrolled",pl:"",ti:""})}
+for(const[n,rw]of Object.entries(bn)){if(!mt.has(n)){const t=rw.reduce((s,r)=>s+r.tr,0);R.push({cr:nm,in:"NOT ON INVOICE",en:rw[0].en,sc:0,ia:0,ea:Math.round(t*100)/100,v:Math.round(-t*100)/100,st:"DISCREPANCY",fg:"Enrolled but missing from invoice",pl:[...new Set(rw.map(r=>r.pd))].join(", "),ti:""})}}return R}
+
+async function epdf(file){const ab=await file.arrayBuffer();const b64=btoa(new Uint8Array(ab).reduce((d,b)=>d+String.fromCharCode(b),""));try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:8000,messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:'Extract all employee billing data from this carrier invoice. Return ONLY a JSON array of objects with: "name" (LAST, FIRST format exactly as shown), "amount" (total amount due as number, no $ sign), "detail" (coverage type or plan). If multiple lines per employee, include each separately. Return ONLY the JSON array.'}]}]})});const d=await res.json();const tx=d.content?.map(c=>c.text||"").join("")||"";return JSON.parse(tx.replace(/```json|```/g,"").trim())}catch(e){console.error("PDF parse error:",e);return[]}}
+
+function pxls(ab){try{const wb=XLSX.read(ab,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});const R=[];let go=false;for(const row of rows){const c=row.map(x=>String(x||"").trim());if(c.some(x=>x==="Name")&&c.some(x=>String(x).includes("Prem"))){go=true;continue}if(go){if(c[1]&&c[1].includes("Total"))break;const nm=c[3]||"";const pr=parseFloat(String(c[6]||"0").replace(/[$,]/g,""))||0;if(nm&&nm!=="None")R.push({name:nm,amount:pr,detail:(c[4]||"")+" - "+(c[5]||"")})}}return R}catch(e){console.error(e);return[]}}
+
+function gc(fn){const l=fn.toLowerCase();if(l.includes("highmark"))return"highmark";if(l.includes("guardian"))return"guardian";if(l.includes("colonial"))return"colonial";if(l.includes("legal")||l.includes("shield"))return"legalshield";if(l.includes("beni")||l.includes("options"))return"beni";return"other"}
+
+function genXL(res,cl,per){const wb=XLSX.utils.book_new();
+const cs=[...new Set(res.map(r=>r.cr))];
+const sd=[["CARRIER INVOICE AUDIT REPORT"],["Prepared for: "+cl],["Audit Period: "+per],["Prepared by: Envision Benefits Group"],["Report Date: "+new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})],[],["Carrier","On Invoice","In Enrollment","Matches","Discrepancies","Invoice Total","Enrollment Total","Net Variance"]];
+for(const c of cs){const cr=res.filter(r=>r.cr===c);sd.push([c,cr.filter(r=>r.in!=="NOT ON INVOICE").length,cr.filter(r=>r.en!=="NOT FOUND").length,cr.filter(r=>r.st==="Match").length,cr.filter(r=>r.st==="DISCREPANCY").length,"$"+cr.reduce((s,r)=>s+r.ia,0).toFixed(2),"$"+cr.reduce((s,r)=>s+r.ea,0).toFixed(2),"$"+(cr.reduce((s,r)=>s+r.ia,0)-cr.reduce((s,r)=>s+r.ea,0)).toFixed(2)])}
+const ws1=XLSX.utils.aoa_to_sheet(sd);ws1["!cols"]=[{wch:30},{wch:14},{wch:14},{wch:12},{wch:14},{wch:16},{wch:18},{wch:16}];XLSX.utils.book_append_sheet(wb,ws1,"Summary");
+const dd=[["DISCREPANCY DETAIL"],[],["Carrier","Invoice Name","Enrollment Name","Score","Invoice $","Enrollment $","Variance","Status","Issue","Plan","Tier"]];
+res.filter(r=>r.st!=="Match").sort((a,b)=>Math.abs(b.v)-Math.abs(a.v)).forEach(r=>dd.push([r.cr,r.in,r.en,r.sc,"$"+r.ia.toFixed(2),"$"+r.ea.toFixed(2),"$"+r.v.toFixed(2),r.st,r.fg,r.pl,r.ti]));
+const ws2=XLSX.utils.aoa_to_sheet(dd);ws2["!cols"]=[{wch:26},{wch:28},{wch:28},{wch:10},{wch:14},{wch:16},{wch:14},{wch:16},{wch:50},{wch:25},{wch:18}];XLSX.utils.book_append_sheet(wb,ws2,"Discrepancies");
+const fd=[["FULL RECONCILIATION"],[],["Carrier","Invoice Name","Enrollment Name","Score","Invoice $","Enrollment $","Variance","Status","Notes","Plan","Tier"]];
+res.sort((a,b)=>a.cr.localeCompare(b.cr)).forEach(r=>fd.push([r.cr,r.in,r.en,r.sc,"$"+r.ia.toFixed(2),"$"+r.ea.toFixed(2),"$"+r.v.toFixed(2),r.st,r.fg,r.pl,r.ti]));
+const ws3=XLSX.utils.aoa_to_sheet(fd);ws3["!cols"]=[{wch:26},{wch:28},{wch:28},{wch:10},{wch:14},{wch:16},{wch:14},{wch:16},{wch:50},{wch:25},{wch:18}];XLSX.utils.book_append_sheet(wb,ws3,"Full Reconciliation");
+const md=[["AUDIT METHODOLOGY"],[],["[R1] Weekly rate calc","Colonial Life and LegalShield: EN weekly rate x weeks in billing month. Accounts for 4 vs 5 week months."],["[R2] Effective date filter","Employees with effective dates after audit period excluded from missing-from-invoice flags."],["[R3] Name confidence","Names below 95% match flagged for manual review."],["Rounding","Under $0.02 = match. $0.02-$1.00 = minor. Over $1.00 = discrepancy."],[],["Prepared by","Envision Benefits Group | envisionbenefitsgroup.com | (844) 761-1100"]];
+const ws4=XLSX.utils.aoa_to_sheet(md);ws4["!cols"]=[{wch:25},{wch:100}];XLSX.utils.book_append_sheet(wb,ws4,"Methodology");
+const buf=XLSX.write(wb,{type:"array",bookType:"xlsx"});const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=cl.replace(/\s+/g,"_")+"_Invoice_Audit_"+per.replace(/\s+/g,"_")+".xlsx";a.click();URL.revokeObjectURL(url)}
+
+function render(){const a=document.getElementById("app");
+let h=`<div class="hdr"><div><div class="hdr-sub">Envision Benefits Group</div><div class="hdr-title">Carrier Invoice Audit Tool</div></div><div class="steps">${[1,2,3,4].map(i=>`<div class="dot ${S.step>=i?"on":"off"}">${i}</div>`).join("")}</div></div>`;
+
+if(S.step===1){
+h+=`<div class="card"><h3>What period are we auditing?</h3><p class="sub">Select the coverage month and year. This drives weekly rate calculations and effective date filtering.</p>
+<div class="row"><div><span class="lbl">Month</span><select id="xMo">${MO.map((m,i)=>`<option value="${i}"${i===S.mo?" selected":""}>${m}</option>`).join("")}</select></div>
+<div><span class="lbl">Year</span><select id="xYr">${[2024,2025,2026,2027].map(y=>`<option value="${y}"${y===S.yr?" selected":""}>${y}</option>`).join("")}</select></div></div>
+<div><span class="lbl">Client name</span><input type="text" id="xCl" value="${S.cl}" placeholder="e.g., New Frontiers in TBI dba Allwel"></div>
+<div class="info" style="margin-top:14px"><strong>Weeks in ${MO[S.mo]} ${S.yr}:</strong> ${wim(S.yr,S.mo+1)} deduction weeks (Fridays)<br>Used for Colonial Life and LegalShield weekly-to-monthly calculations</div>
+<div class="btns"><button class="btn bp" id="go2">Continue &rarr;</button></div></div>`}
+
+else if(S.step===2){
+h+=`<div class="card"><h3>Upload files</h3><p class="sub">Enrollment census CSV from EASE or Employee Navigator, plus carrier invoice PDFs or Excel files.</p>
+<span class="lbl">Enrollment census (CSV)</span><div class="drop${S.cf?" ok":""}" id="cd">${S.cf?`&#10003; ${S.cf.name}`:"Click to upload CSV"}</div><input type="file" id="ci" accept=".csv" style="display:none">
+<div style="margin-top:18px"><span class="lbl">Carrier invoices (PDF or Excel)</span><div class="drop" id="id">Click to add invoice files</div><input type="file" id="ii" accept=".pdf,.xlsx,.xls" multiple style="display:none"></div>
+${S.cfs.map((f,i)=>`<div class="frow"><span class="fn">${f.file.name}</span><select data-i="${i}">${CA.map(c=>`<option value="${c.v}"${c.v===f.t?" selected":""}>${c.l}</option>`).join("")}</select><button class="rm" data-r="${i}">&times;</button></div>`).join("")}
+<div class="btns"><button class="btn bs" id="b1">&larr; Back</button><button class="btn bp" id="go3"${!S.cf||!S.cfs.length?" disabled":""}>Review &amp; run audit &rarr;</button></div></div>`}
+
+else if(S.step===3){
+const wk=wim(S.yr,S.mo+1);
+h+=`<div class="card"><h3>Review &amp; run</h3>
+<div class="info"><strong>${S.cl}</strong> &mdash; ${MO[S.mo]} ${S.yr}<br>Census: ${S.cf?.name} &nbsp;|&nbsp; ${S.cfs.length} invoice(s) &nbsp;|&nbsp; ${wk} deduction weeks</div>
+<div class="rules"><strong>Active rules:</strong><br>
+&#8226; [R1] Colonial &amp; LegalShield: weekly rate &times; ${wk} weeks = expected monthly<br>
+&#8226; [R2] Future effective dates excluded from &ldquo;not on invoice&rdquo; flags<br>
+&#8226; [R3] Name matches below 95% flagged for review</div>
+${S.err?`<div class="err">${S.err}</div>`:""}
+${S.proc?`<div class="prog">${S.prog}<div class="pbar"><div class="pfill"></div></div></div>`:""}
+<div class="btns"><button class="btn bs" id="b2"${S.proc?" disabled":""}>&larr; Back</button><button class="btn bp" id="run"${S.proc?" disabled":""}>${S.proc?"Running audit...":"Run invoice audit"}</button></div></div>`}
+
+else if(S.step===4&&S.res){
+const r=S.res,tot=r.length,mat=r.filter(x=>x.st==="Match").length,disc=r.filter(x=>x.st==="DISCREPANCY").length,nf=r.filter(x=>x.fg?.includes("Name")).length;
+h+=`<div class="sgrid"><div class="stat"><div class="n" style="color:#1B4477">${tot}</div><div class="l">Total items</div></div><div class="stat"><div class="n" style="color:#2e7d32">${mat}</div><div class="l">Matches</div></div><div class="stat"><div class="n" style="color:#c62828">${disc}</div><div class="l">Discrepancies</div></div><div class="stat"><div class="n" style="color:#f57f17">${nf}</div><div class="l">Name flags</div></div></div>`;
+const cs=[...new Set(r.map(x=>x.cr))];
+h+=`<div class="card"><h3>Results &mdash; ${MO[S.mo]} ${S.yr}</h3><p class="sub">${S.cl}</p><table class="t"><thead><tr><th>Carrier</th><th>On inv</th><th>In EN</th><th>Match</th><th>Disc</th><th>Variance</th></tr></thead><tbody>`;
+for(const c of cs){const cr=r.filter(x=>x.cr===c);const d=cr.filter(x=>x.st==="DISCREPANCY").length;h+=`<tr><td style="font-weight:600">${c}</td><td>${cr.filter(x=>x.in!=="NOT ON INVOICE").length}</td><td>${cr.filter(x=>x.en!=="NOT FOUND").length}</td><td style="color:#2e7d32;font-weight:600">${cr.filter(x=>x.st==="Match").length}</td><td style="color:${d?"#c62828":"#2e7d32"};font-weight:600">${d}</td><td class="mono">${cr.reduce((s,x)=>s+x.v,0).toFixed(2)}</td></tr>`}
+h+=`</tbody></table></div>`;
+const ds=r.filter(x=>x.st!=="Match").sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+if(ds.length){h+=`<div class="card"><h3>Discrepancies &amp; flags <span class="badge bd">${disc} items</span></h3><div style="overflow-x:auto"><table class="t"><thead><tr><th>Carrier</th><th>Invoice name</th><th>Enrollment name</th><th>Score</th><th>Invoice $</th><th>Expected $</th><th>Variance</th><th>Issue</th></tr></thead><tbody>`;
+for(const d of ds){h+=`<tr class="${d.st==="DISCREPANCY"?"disc":d.fg?.includes("Name")?"warn":""}"><td>${d.cr}</td><td>${d.in}</td><td>${d.en}${d.fg?.includes("Name")?'<span class="nflag">&#9888; name variation</span>':""}</td><td>${d.sc||"&mdash;"}</td><td class="mono">${d.ia.toFixed(2)}</td><td class="mono">${d.ea.toFixed(2)}</td><td class="mono" style="font-weight:600;color:${d.v>0?"#c62828":d.v<0?"#1565c0":"inherit"}">${d.v>0?"+":""}${d.v.toFixed(2)}</td><td style="font-size:11px;max-width:220px">${d.fg}</td></tr>`}
+h+=`</tbody></table></div></div>`}
+h+=`<div class="card" style="display:flex;gap:12px;flex-wrap:wrap"><button class="btn bp" id="dl">Download Excel report</button><button class="btn bs" id="na">Start new audit</button></div>`}
+
+h+=`<div class="footer">Envision Benefits Group &nbsp;|&nbsp; envisionbenefitsgroup.com &nbsp;|&nbsp; (844) 761-1100<br>Invoice Audit Tool v1.0 &mdash; SOLA Module: Benefits CRM &amp; Renewal Operations Suite</div>`;
+a.innerHTML=h;bindEvents()}
+
+function bindEvents(){
+const $=id=>document.getElementById(id);
+if(S.step===1){$("xMo")?.addEventListener("change",e=>{S.mo=+e.target.value;render()});$("xYr")?.addEventListener("change",e=>{S.yr=+e.target.value;render()});$("xCl")?.addEventListener("input",e=>S.cl=e.target.value);$("go2")?.addEventListener("click",()=>{if(S.cl.trim()){S.step=2;render()}})}
+if(S.step===2){$("cd")?.addEventListener("click",()=>$("ci")?.click());$("ci")?.addEventListener("change",e=>{S.cf=e.target.files[0];render()});$("id")?.addEventListener("click",()=>$("ii")?.click());$("ii")?.addEventListener("change",e=>{for(const f of e.target.files)S.cfs.push({file:f,t:gc(f.name)});e.target.value="";render()});document.querySelectorAll(".frow select").forEach(s=>s.addEventListener("change",e=>{S.cfs[+e.target.dataset.i].t=e.target.value}));document.querySelectorAll(".rm").forEach(b=>b.addEventListener("click",e=>{S.cfs.splice(+e.target.dataset.r,1);render()}));$("b1")?.addEventListener("click",()=>{S.step=1;render()});$("go3")?.addEventListener("click",()=>{if(S.cf&&S.cfs.length){S.step=3;render()}})}
+if(S.step===3){$("b2")?.addEventListener("click",()=>{S.step=2;render()});$("run")?.addEventListener("click",doAudit)}
+if(S.step===4){$("dl")?.addEventListener("click",()=>genXL(S.res,S.cl,MO[S.mo]+" "+S.yr));$("na")?.addEventListener("click",()=>{S={step:1,mo:3,yr:2026,cl:"",cf:null,cfs:[],proc:false,prog:"",err:null,res:null};render()})}}
+
+async function doAudit(){S.proc=true;S.err=null;S.prog="Reading enrollment census...";render();
+try{const csv=await S.cf.text();const enr=pen(csv);S.prog=`Parsed ${enr.length} records for ${[...new Set(enr.map(e=>e.en))].length} employees`;render();
+const wk=wim(S.yr,S.mo+1);const all=[];
+for(const cf of S.cfs){const cfg=CA.find(c=>c.v===cf.t)||CA[5];S.prog=`Parsing ${cfg.l}: ${cf.file.name}...`;render();
+let recs;if(cf.file.name.match(/\.xlsx?$/i)){const ab=await cf.file.arrayBuffer();recs=pxls(ab)}else{recs=await epdf(cf.file)}
+if(!recs||!recs.length){S.prog=`Warning: no data extracted from ${cf.file.name}`;render();continue}
+if(cf.t==="legalshield"){const bn={};for(const r of recs){const k=nn(r.name);if(!bn[k])bn[k]={name:r.name,amount:0};bn[k].amount+=r.amount}recs=Object.values(bn)}
+S.prog=`Reconciling ${recs.length} ${cfg.l} records...`;render();
+all.push(...rec(cfg.l,recs,enr,{ec:cfg.ec,pt:cfg.pt,ay:S.yr,am:S.mo+1,wc:cfg.w,wk}))}
+S.res=all;S.step=4}catch(e){S.err="Audit failed: "+e.message;console.error(e)}finally{S.proc=false;render()}}
+
+render();
+</script>
+</body>
+</html>
