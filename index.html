@@ -117,19 +117,40 @@ async function epdf(file,carrier){
   return pPdfGeneric(text);
 }
 function pAetna(text){
-  const R=[];const lines=text.split("\n");let inS=false;
+  // Format: employee header line = "LastName FirstName [MI] *****XXXX Category... [optional $total]"
+  // followed by detail lines with component codes: "415 $47.25 500 $626.20 520 $176.32 521 $0.00"
+  // Total = sum of non-zero component amounts (106 and 521 are always $0.00)
+  const R=[];
+  const lines=text.split("\n");
+  let inS=false;
+  let cur=null;
+  function flush(){
+    if(cur&&cur.amount>0)R.push({name:cur.name,amount:Math.round(cur.amount*100)/100,detail:"Medical"});
+    cur=null;
+  }
   for(const line of lines){
     if(line.includes("CURRENT INFORCE CHARGES")){inS=true;continue}
     if(!inS)continue;
-    const m=line.match(/^([A-Z][a-z]+)\s+([A-Z][a-z]+)\s+[A-Z]?\s*\*{5}\d{4}\s+.*?\$([\d,]+\.\d{2})\s*$/);
-    if(m)R.push({name:`${m[2]}, ${m[1]}`,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Medical"});
-  }
-  if(!R.length){
-    for(const line of text.split("\n")){
-      const m=line.match(/([A-Z][A-Za-z\-']+),?\s+([A-Z][A-Za-z\-']+).*?\$\s*([\d,]+\.\d{2})/);
-      if(m&&!line.includes("Total")&&!line.includes("TOTAL"))R.push({name:`${m[1]}, ${m[2]}`,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Medical"});
+    if(line.includes("LAST NAME")&&line.includes("FIRST NAME"))continue;
+    if(line.includes("RETROACTIVITY")){flush();break}
+    // Employee header: starts with CapWord CapWord [optional single capital] *****XXXX
+    const nm=line.match(/^([A-Z][A-Za-z'\-]+)\s+([A-Z][A-Za-z'\-]+)(?:\s+[A-Z])?\s+\*{5}\d{4}/);
+    if(nm){
+      flush();
+      cur={name:`${nm[1]}, ${nm[2]}`,amount:0,gotTotal:false};
+      // If the AMOUNT column appears as last non-zero $X.XX on this line, use it directly
+      const amts=[...line.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
+      const last=amts[amts.length-1];
+      if(last&&last>0){cur.amount=last;cur.gotTotal=true}
+      continue;
+    }
+    // Accumulate component amounts from detail lines when no total was captured yet
+    if(cur&&!cur.gotTotal){
+      const amts=[...line.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
+      for(const a of amts)if(a>0)cur.amount=Math.round((cur.amount+a)*100)/100;
     }
   }
+  flush();
   return R;
 }
 function pPdfGeneric(text){
