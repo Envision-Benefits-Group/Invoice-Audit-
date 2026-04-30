@@ -1,5 +1,3 @@
-=====
-@'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -124,7 +122,13 @@ function pAetna(text){
     if(line.includes("CURRENT INFORCE CHARGES")){inS=true;continue}
     if(!inS)continue;
     const m=line.match(/^([A-Z][a-z]+)\s+([A-Z][a-z]+)\s+[A-Z]?\s*\*{5}\d{4}\s+.*?\$([\d,]+\.\d{2})\s*$/);
-    if(m)R.push({name:`${m[1]}, ${m[2]}`,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Medical"});
+    if(m)R.push({name:`${m[2]}, ${m[1]}`,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Medical"});
+  }
+  if(!R.length){
+    for(const line of text.split("\n")){
+      const m=line.match(/([A-Z][A-Za-z\-']+),?\s+([A-Z][A-Za-z\-']+).*?\$\s*([\d,]+\.\d{2})/);
+      if(m&&!line.includes("Total")&&!line.includes("TOTAL"))R.push({name:`${m[1]}, ${m[2]}`,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Medical"});
+    }
   }
   return R;
 }
@@ -137,4 +141,134 @@ function pPdfGeneric(text){
   return R;
 }
 function pxls(ab){try{const wb=XLSX.read(ab,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});const R=[];let go=false;for(const row of rows){const c=row.map(x=>String(x||"").trim());if(c.some(x=>x==="Name")&&c.some(x=>String(x).includes("Prem"))){go=true;continue}if(go){if(c[1]&&c[1].includes("Total"))break;const nm=c[3]||"";const pr=parseFloat(String(c[6]||"0").replace(/[$,]/g,""))||0;if(nm&&nm!=="None")R.push({name:nm,amount:pr,detail:(c[4]||"")+" - "+(c[5]||"")})}}return R}catch(e){console.error(e);return[]}}
-function gc(fn){const l=fn.toLowerCase();if(l.includes("aetna"))return"aetna";if(l.includes("highmark"))return"highmark";if(l.includes("guardian"))return"guardian";if(l.includes("colonial"))return"colonial";if(l.includes("legal"
+function gc(fn){const l=fn.toLowerCase();if(l.includes("aetna"))return"aetna";if(l.includes("highmark"))return"highmark";if(l.includes("guardian"))return"guardian";if(l.includes("colonial"))return"colonial";if(l.includes("legal")||l.includes("shield"))return"legalshield";if(l.includes("beni")||l.includes("options"))return"beni";return"other"}
+
+function render(){
+  const a=document.getElementById("app");const s=S;
+  let h=`<div class="hdr"><div><div class="hdr-sub">Envision Benefits Group</div><div class="hdr-title">Carrier Invoice Audit Tool</div></div><div class="steps">${[1,2,3,4].map(i=>`<div class="dot ${s.step>=i?"on":"off"}">${i}</div>`).join("")}</div></div>`;
+  if(s.step===1){
+    h+=`<div class="card"><h3>Audit period</h3><p class="sub">Select the coverage month and year. Drives weekly rate calculations and effective date filtering.</p>
+    <div class="row"><div><span class="lbl">Month</span><select id="sMo">${MO.map((m,i)=>`<option value="${i}" ${i===s.mo?"selected":""}>${m}</option>`).join("")}</select></div>
+    <div><span class="lbl">Year</span><select id="sYr">${[2024,2025,2026,2027].map(y=>`<option value="${y}" ${y===s.yr?"selected":""}>${y}</option>`).join("")}</select></div></div>
+    <div><span class="lbl">Client name</span><input id="sCl" type="text" value="${s.cl}" placeholder="e.g., KAM Creamery Holdings LLC"></div>
+    <div class="info" style="margin-top:14px"><strong>Weeks in ${MO[s.mo]} ${s.yr}:</strong> ${wim(s.yr,s.mo+1)} deduction Fridays &mdash; used for Colonial Life and LegalShield weekly rate calculations</div>
+    <div class="btns"><button class="btn bp" id="go2">Continue</button></div></div>`;
+  }
+  else if(s.step===2){
+    h+=`<div class="card"><h3>Upload files</h3><p class="sub">Enrollment census CSV from EASE or Employee Navigator, plus carrier invoice PDFs or Excel files.</p>
+    <span class="lbl">Enrollment census (CSV)</span>
+    <div class="drop ${s.cf?"ok":""}" id="cDrop">${s.cf?`&#10003; ${s.cf.name}`:"Click to upload enrollment census (CSV)"}</div>
+    <input type="file" id="cIn" accept=".csv" style="display:none">
+    <div style="margin-top:16px"><span class="lbl">Carrier invoices (PDF or Excel)</span>
+    <div class="drop" id="iDrop">Click to add invoice files</div>
+    <input type="file" id="iIn" accept=".pdf,.xlsx,.xls" multiple style="display:none"></div>
+    ${s.cfs.map((f,i)=>`<div class="frow"><span class="fn">${f.file.name}</span><select data-i="${i}">${CA.map(c=>`<option value="${c.v}" ${c.v===f.t?"selected":""}>${c.l}</option>`).join("")}</select><button class="rm" data-ri="${i}">&times;</button></div>`).join("")}
+    <div class="btns"><button class="btn bs" id="bk1">&#8592; Back</button><button class="btn bp" id="go3" ${!s.cf||!s.cfs.length?"disabled":""}>Review &amp; run</button></div></div>`;
+  }
+  else if(s.step===3){
+    const wk=wim(s.yr,s.mo+1);
+    h+=`<div class="card"><h3>Review &amp; run audit</h3>
+    <div class="info"><strong>${s.cl||"(no client name)"}</strong> &mdash; ${MO[s.mo]} ${s.yr}<br>Census: ${s.cf?.name} &nbsp;|&nbsp; ${s.cfs.length} invoice(s) &nbsp;|&nbsp; ${wk} deduction Fridays</div>
+    <div class="rules"><strong>Active rules:</strong><br>
+    [R1] Colonial Life &amp; LegalShield: weekly rate &times; ${wk} Fridays = expected monthly<br>
+    [R2] Future effective dates filtered out of &ldquo;not on invoice&rdquo; flags<br>
+    [R3] Name match score below 95% flagged for manual review</div>
+    ${s.err?`<div class="err">${s.err}</div>`:""}
+    ${s.proc?`<div class="prog">${s.prog}<div class="pbar"><div class="pfill"></div></div></div>`:""}
+    <div class="btns"><button class="btn bs" id="bk2" ${s.proc?"disabled":""}>&#8592; Back</button><button class="btn bp" id="run" ${s.proc?"disabled":""}>${s.proc?"Running...":"Run invoice audit"}</button></div></div>`;
+  }
+  else if(s.step===4&&s.res){
+    const r=s.res,tot=r.length,mat=r.filter(x=>x.st==="Match").length,disc=r.filter(x=>x.st==="DISCREPANCY").length,nf=r.filter(x=>x.fg&&x.fg.includes("Name")).length;
+    h+=`<div class="sgrid">
+    <div class="stat"><div class="n">${tot}</div><div class="l">Total items</div></div>
+    <div class="stat"><div class="n" style="color:#2e7d32">${mat}</div><div class="l">Matches</div></div>
+    <div class="stat"><div class="n" style="color:#c62828">${disc}</div><div class="l">Discrepancies</div></div>
+    <div class="stat"><div class="n" style="color:#f57f17">${nf}</div><div class="l">Name flags</div></div></div>`;
+    const crs=[...new Set(r.map(x=>x.cr))];
+    h+=`<div class="card"><h3>Summary &mdash; ${MO[s.mo]} ${s.yr}</h3><p class="sub">${s.cl}</p>
+    <table class="t"><thead><tr><th>Carrier</th><th>On invoice</th><th>In census</th><th>Matches</th><th>Discrepancies</th><th>Net variance</th></tr></thead><tbody>`;
+    for(const c of crs){const cr=r.filter(x=>x.cr===c);h+=`<tr><td style="font-weight:600">${c}</td><td>${cr.filter(x=>x.in!=="NOT ON INVOICE").length}</td><td>${cr.filter(x=>x.en!=="NOT FOUND").length}</td><td style="color:#2e7d32;font-weight:600">${cr.filter(x=>x.st==="Match").length}</td><td style="color:${cr.filter(x=>x.st==="DISCREPANCY").length?"#c62828":"#2e7d32"};font-weight:600">${cr.filter(x=>x.st==="DISCREPANCY").length}</td><td class="mono">${cr.reduce((s,x)=>s+x.v,0).toFixed(2)}</td></tr>`}
+    h+=`</tbody></table></div>`;
+    const discs=r.filter(x=>x.st!=="Match").sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+    if(discs.length){
+      h+=`<div class="card"><h3>Discrepancies &amp; flags <span class="badge bd">${r.filter(x=>x.st==="DISCREPANCY").length} items</span></h3><div style="overflow-x:auto">
+      <table class="t"><thead><tr><th>Carrier</th><th>Invoice name</th><th>Census name</th><th>Score</th><th>Invoice $</th><th>Expected $</th><th>Variance</th><th>Issue</th></tr></thead><tbody>`;
+      for(const d of discs){const cls=d.st==="DISCREPANCY"?"disc":d.fg&&d.fg.includes("Name")?"warn":"";h+=`<tr class="${cls}"><td>${d.cr}</td><td>${d.in}</td><td>${d.en}${d.fg&&d.fg.includes("Name")?'<span class="nflag">&#9888; name variation</span>':""}</td><td>${d.sc||"&mdash;"}</td><td class="mono">${d.ia.toFixed(2)}</td><td class="mono">${d.ea.toFixed(2)}</td><td class="mono" style="font-weight:700;color:${d.v>0?"#c62828":d.v<0?"#1565c0":"inherit"}">${d.v>0?"+":""}${d.v.toFixed(2)}</td><td style="font-size:11px;max-width:200px">${d.fg||""}</td></tr>`}
+      h+=`</tbody></table></div></div>`;
+    }
+    h+=`<div class="card" style="display:flex;gap:10px"><button class="btn bp" id="dlXl">&#8595; Download Excel report</button><button class="btn bs" id="nw">Start new audit</button></div>`;
+  }
+  h+=`<div class="footer">Envision Benefits Group &nbsp;|&nbsp; envisionbenefitsgroup.com &nbsp;|&nbsp; (844) 761-1100<br>Invoice Audit Tool v2.0 &mdash; SOLA Module: Benefits CRM &amp; Renewal Operations Suite</div>`;
+  a.innerHTML=h;
+  bind();
+}
+
+function bind(){
+  const $=id=>document.getElementById(id);
+  if(S.step===1){
+    $("sMo")?.addEventListener("change",e=>{S.mo=+e.target.value;render()});
+    $("sYr")?.addEventListener("change",e=>{S.yr=+e.target.value;render()});
+    $("sCl")?.addEventListener("input",e=>S.cl=e.target.value);
+    $("go2")?.addEventListener("click",()=>{if(S.cl.trim()){S.step=2;render()}else{$("sCl").focus()}});
+  }
+  if(S.step===2){
+    $("cDrop")?.addEventListener("click",()=>$("cIn")?.click());
+    $("cIn")?.addEventListener("change",e=>{S.cf=e.target.files[0];render()});
+    $("iDrop")?.addEventListener("click",()=>$("iIn")?.click());
+    $("iIn")?.addEventListener("change",e=>{for(const f of e.target.files)S.cfs.push({file:f,t:gc(f.name)});e.target.value="";render()});
+    document.querySelectorAll(".frow select").forEach(sel=>sel.addEventListener("change",e=>{S.cfs[+e.target.dataset.i].t=e.target.value}));
+    document.querySelectorAll(".rm").forEach(b=>b.addEventListener("click",e=>{S.cfs.splice(+e.target.dataset.ri,1);render()}));
+    $("bk1")?.addEventListener("click",()=>{S.step=1;render()});
+    $("go3")?.addEventListener("click",()=>{if(S.cf&&S.cfs.length){S.step=3;render()}});
+  }
+  if(S.step===3){
+    $("bk2")?.addEventListener("click",()=>{S.step=2;render()});
+    $("run")?.addEventListener("click",runAudit);
+  }
+  if(S.step===4){
+    $("nw")?.addEventListener("click",()=>{S={step:1,mo:3,yr:2026,cl:"",cf:null,cfs:[],proc:false,prog:"",err:null,res:null};render()});
+    $("dlXl")?.addEventListener("click",dlXl);
+  }
+}
+
+async function runAudit(){
+  S.proc=true;S.err=null;S.prog="Reading enrollment census...";render();
+  try{
+    const csv=await S.cf.text();
+    const enr=pen(csv);
+    S.prog=`Parsed ${enr.length} records for ${[...new Set(enr.map(e=>e.en))].length} employees`;render();
+    const wk=wim(S.yr,S.mo+1);
+    const all=[];
+    for(const cf of S.cfs){
+      const cfg=CA.find(c=>c.v===cf.t)||CA[CA.length-1];
+      S.prog=`Parsing ${cfg.l}: ${cf.file.name}...`;render();
+      let recs;
+      if(cf.file.name.match(/\.xlsx?$/i)){const ab=await cf.file.arrayBuffer();recs=pxls(ab)}
+      else{recs=await epdf(cf.file,cf.t)}
+      if(!recs||!recs.length){S.prog=`No data found in ${cf.file.name} — check format`;render();continue}
+      if(cf.t==="legalshield"){const byN={};for(const r of recs){const k=nn(r.name);if(!byN[k])byN[k]={name:r.name,amount:0};byN[k].amount+=r.amount}recs=Object.values(byN)}
+      S.prog=`Reconciling ${recs.length} ${cfg.l} records...`;render();
+      all.push(...rec(cfg.l,recs,enr,{ec:cfg.ec,pt:cfg.pt,ay:S.yr,am:S.mo+1,wc:cfg.w,wk}));
+    }
+    S.res=all;S.step=4;
+  }catch(e){S.err=`Audit failed: ${e.message}`;console.error(e)}
+  finally{S.proc=false;render()}
+}
+
+function dlXl(){
+  if(!S.res)return;
+  const wb=XLSX.utils.book_new();
+  const crs=[...new Set(S.res.map(x=>x.cr))];
+  const sum=[["Carrier","On Invoice","In Census","Matches","Discrepancies","Net Variance ($)"]];
+  for(const c of crs){const cr=S.res.filter(x=>x.cr===c);sum.push([c,cr.filter(x=>x.in!=="NOT ON INVOICE").length,cr.filter(x=>x.en!=="NOT FOUND").length,cr.filter(x=>x.st==="Match").length,cr.filter(x=>x.st==="DISCREPANCY").length,+cr.reduce((s,x)=>s+x.v,0).toFixed(2)])}
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Summary");
+  const det=[["Carrier","Invoice Name","Census Name","Match Score","Invoice Amount","Expected Amount","Variance","Status","Notes"]];
+  for(const r of S.res)det.push([r.cr,r.in,r.en,r.sc,r.ia,r.ea,r.v,r.st,r.fg||""]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(det),"Detail");
+  XLSX.writeFile(wb,`${(S.cl||"audit").replace(/[^a-z0-9]/gi,"_")}_${MO[S.mo]}_${S.yr}_audit.xlsx`);
+}
+
+render();
+</script>
+</body>
+</html>
