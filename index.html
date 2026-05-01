@@ -193,23 +193,38 @@ function pAetna(items){
   return R;
 }
 function pLegalShield(text){
-  // Format per line: [MembershipNumber]  LAST, FIRST  $amount
-  // Handles ALL CAPS or Title Case names. Membership# is optional on the line.
-  // Each employee may appear twice (LegalShield + IDShield lines); dedup in runAudit.
+  // Handles two layouts from mammoth docx extraction:
+  // 1) Same-line: [membership#]  LAST, FIRST  $amount
+  // 2) Multi-line (mammoth table): membership# on one line, name on next, $amount on next
+  const lines=text.split("\n").map(l=>l.trim());
   const R=[];
-  for(const ln of text.split("\n")){
-    const s=ln.trim();
+  // Pass 1: same-line — name and amount on same line
+  for(const s of lines){
     if(!s)continue;
-    // Find dollar amount anywhere on line ($20.26 or $ 20.26)
     const amtM=s.match(/\$\s*(\d[\d,]*\.\d{2})/);
     if(!amtM)continue;
     const amt=parseFloat(amtM[1].replace(/,/g,""));
     if(amt<=0)continue;
-    // Name = everything before the $, with leading membership# (8+ digits) stripped
-    const before=s.slice(0,s.indexOf(amtM[0])).trim().replace(/^\d{8,}\s+/,"").trim();
-    if(!before.includes(","))continue;   // must have comma (LAST, FIRST)
-    if(!/^[A-Za-z]/.test(before))continue; // must start with a letter
-    R.push({name:before,amount:amt,detail:"Legal"});
+    const before=s.slice(0,s.indexOf(amtM[0])).trim().replace(/^\d{8,}\s+/,"").trim().replace(/\s+[a-z]$/,"").trim();
+    if(before.includes(",")&&/^[A-Za-z]/.test(before))R.push({name:before,amount:amt,detail:"Legal"});
+  }
+  if(R.length)return R;
+  // Pass 2: multi-line (each cell on its own line)
+  const nl=lines.filter(l=>l);
+  for(let i=0;i<nl.length;i++){
+    const amtM=nl[i].match(/^\$\s*(\d[\d,]*\.\d{2})$/);
+    if(!amtM)continue;
+    const amt=parseFloat(amtM[1].replace(/,/g,""));
+    if(amt<=0)continue;
+    // Scan back up to 4 lines for a name (LAST, FIRST — has comma, starts with letter, not pure digits)
+    for(let j=i-1;j>=Math.max(0,i-4);j--){
+      const l=nl[j];
+      if(l.includes(",")&&/^[A-Za-z]/.test(l)&&!/^\d/.test(l)){
+        const name=l.replace(/\s+[a-z]$/,"").trim(); // strip trailing status artifact like "s"
+        R.push({name,amount:amt,detail:"Legal"});
+        break;
+      }
+    }
   }
   return R;
 }
