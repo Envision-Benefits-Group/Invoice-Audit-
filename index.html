@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231B4477' rx='20' width='100' height='100'/><text y='70' x='15' font-size='60' fill='white'>E</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;color:#1a1a1a;min-height:100vh}
@@ -128,6 +129,13 @@ async function epdf(file,carrier){
   if(carrier==="legalshield"){window._lsDebug=rawDbg.join("\n")+"\n\n=== JOINED LINES ===\n"+text;return pLegalShield(text);}
   return pPdfGeneric(text);
 }
+async function edocx(file,carrier){
+  const ab=await file.arrayBuffer();
+  const result=await mammoth.extractRawText({arrayBuffer:ab});
+  const text=result.value||"";
+  if(carrier==="legalshield"){window._lsDebug="=== DOCX RAW TEXT ===\n"+text;return pLegalShield(text);}
+  return pPdfGeneric(text);
+}
 function niIdx(x,xArr){let b=-1,bd=Infinity;for(let i=0;i<xArr.length;i++){const d=Math.abs(x-xArr[i]);if(d<bd){bd=d;b=i}}return b}
 function pAetna(items){
   // items: [{s,x,y,pg}] — raw pdf.js text items with x,y coordinates.
@@ -234,7 +242,7 @@ function render(){
     <input type="file" id="cIn" accept=".csv" style="display:none">
     <div style="margin-top:16px"><span class="lbl">Carrier invoices (PDF or Excel)</span>
     <div class="drop" id="iDrop">Click to add invoice files</div>
-    <input type="file" id="iIn" accept=".pdf,.xlsx,.xls" multiple style="display:none"></div>
+    <input type="file" id="iIn" accept=".pdf,.xlsx,.xls,.docx" multiple style="display:none"></div>
     ${s.cfs.map((f,i)=>`<div class="frow"><span class="fn">${f.file.name}</span><select data-i="${i}">${CA.map(c=>`<option value="${c.v}" ${c.v===f.t?"selected":""}>${c.l}</option>`).join("")}</select><button class="rm" data-ri="${i}">&times;</button></div>`).join("")}
     <div class="btns"><button class="btn bs" id="bk1">&#8592; Back</button><button class="btn bp" id="go3" ${!s.cf||!s.cfs.length?"disabled":""}>Review &amp; run</button></div></div>`;
   }
@@ -324,6 +332,7 @@ async function runAudit(){
       S.prog=`Parsing ${cfg.l}: ${cf.file.name}...`;render();
       let recs;
       if(cf.file.name.match(/\.xlsx?$/i)){const ab=await cf.file.arrayBuffer();recs=pxls(ab)}
+      else if(cf.file.name.match(/\.docx$/i)){recs=await edocx(cf.file,cf.t)}
       else{recs=await epdf(cf.file,cf.t)}
       if(!recs||!recs.length){S.prog=`No data found in ${cf.file.name} — check format`;render();continue}
       if(cf.t==="legalshield"){const byN={};for(const r of recs){const k=nn(r.name);if(!byN[k])byN[k]={name:r.name,amount:0};byN[k].amount+=r.amount}recs=Object.values(byN)}
