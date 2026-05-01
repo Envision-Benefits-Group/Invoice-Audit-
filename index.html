@@ -117,71 +117,50 @@ async function epdf(file,carrier){
   return pPdfGeneric(text);
 }
 function pAetna(text){
-  // Use *****XXXX employee IDs as anchors. Each employee line has:
-  //   [LastName] [FirstName] [MI?] *****XXXX [Category] [Date] [FamilyCode] [MedType] [$0.00] [$TOTAL]
-  // or the last name may be on the previous y-line if pdf.js splits columns.
-  // The AMOUNT column (last $X.XX on the ID line) is the per-employee total.
-  // If it's absent, sum all non-zero component amounts from subsequent detail lines.
-  const s0=text.indexOf("CURRENT INFORCE CHARGES");
-  if(s0<0)return[];
-  const s1=text.indexOf("RETROACTIVITY",s0);
-  const section=(s1>0?text.slice(s0,s1):text.slice(s0));
-  const lines=section.split("\n").map(l=>l.trim()).filter(Boolean);
-
-  // Locate all employee-ID lines (skip the column header which literally says "EMPL ID")
-  const empIdx=[];
-  for(let i=0;i<lines.length;i++){
-    if(!/\*{5}\d{4}/.test(lines[i]))continue;
-    const before=lines[i].replace(/\*{5}\d{4}.*/,"").trim();
-    if(/\bEMPL\b/.test(before))continue; // this is the "EMPL ID" column header row
-    empIdx.push(i);
-  }
-
+  // The Aetna PDF is a landscape/rotated table. pdf.js groups text by y-coordinate,
+  // producing one line per TABLE ROW (not per employee column). Structure per page:
+  //   [bare $X.XX lines]          ← per-employee AMOUNT totals, no label
+  //   AMOUNT $X.XX $X.XX ...      ← remaining per-employee totals with label
+  //   VIS AMOUNT / VIS TYPE / DENT AMOUNT / DENT TYPE  (empty)
+  //   MED AMOUNT $0.00 ...        (component detail, skip)
+  //   MEDTYPE / FAMILY CODE / dates / CATEGORY / EMPL ID / MI
+  //   FIRST NAME fn1 fn2 fn3 ...
+  //   [page number digit]
+  //   CURRENT INFORCE CHARGES LAST NAME ln1 ln2 ln3 ...
+  //   [page footer]
+  const lines=text.split("\n").map(l=>l.trim()).filter(Boolean);
   const R=[];
-  for(let e=0;e<empIdx.length;e++){
-    const li=empIdx[e];
-    const nextLi=e+1<empIdx.length?empIdx[e+1]:lines.length;
-    const line=lines[li];
-
-    // Extract name words (Title Case) from text before the *****XXXX
-    const before=line.replace(/\*{5}\d{4}.*/,"").trim();
-    // Title-case words = start with capital, rest lowercase (excludes ALL-CAPS headers)
-    const nw=before.split(/\s+/).filter(w=>/^[A-Z][a-z]/.test(w));
-
-    let last="",first="";
-    if(nw.length>=2){
-      last=nw[0]; first=nw[1];
-    } else if(nw.length===1){
-      // First name found; look back up to 3 lines for a standalone last name
-      first=nw[0];
-      for(let j=li-1;j>=Math.max(0,li-3)&&!last;j--){
-        const pw=lines[j].split(/\s+/).filter(w=>/^[A-Z][a-z]{2,}/.test(w));
-        if(pw.length===1)last=pw[0];
-      }
-    } else {
-      // No title-case words before ID — look at previous line for both names
-      for(let j=li-1;j>=Math.max(0,li-3)&&!last;j--){
-        const pw=lines[j].split(/\s+/).filter(w=>/^[A-Z][a-z]{2,}/.test(w));
-        if(pw.length>=2){last=pw[0];first=pw[1]}
-        else if(pw.length===1&&!first)last=pw[0];
+  for(let i=0;i<lines.length;i++){
+    const lnm=lines[i].match(/CURRENT INFORCE CHARGES LAST NAME\s+(.*)/);
+    if(!lnm)continue;
+    const lastNames=lnm[1].trim().split(/\s+/).filter(w=>w.length>1&&/^[A-Za-z]/.test(w));
+    if(!lastNames.length)continue;
+    // Find FIRST NAME line scanning backward (within 15 lines)
+    let firstNames=[];
+    for(let j=i-1;j>=Math.max(0,i-15);j--){
+      const fnm=lines[j].match(/^FIRST NAME\s+(.*)/);
+      if(fnm){firstNames=fnm[1].trim().split(/\s+/).filter(w=>w.length>0);break}
+    }
+    // Collect per-employee total amounts scanning backward.
+    // Gather "AMOUNT $X..." lines and bare "$X..." lines (not MED/VIS/DENT headers).
+    // unshift preserves forward (left-to-right employee) order after backward scan.
+    const amtBuckets=[];
+    for(let j=i-1;j>=0;j--){
+      const ln=lines[j];
+      if(/CURRENT INFORCE CHARGES LAST NAME/.test(ln))break;
+      if(/^AMOUNT\s+\$/.test(ln)){
+        const vals=[...ln.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
+        if(vals.length)amtBuckets.unshift(vals);
+      } else if(/^\$[\d,]+\.\d{2}/.test(ln)&&!/\b(?:MED|VIS|DENT)\b/.test(ln)){
+        const vals=[...ln.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
+        if(vals.length<=10)amtBuckets.unshift(vals);
       }
     }
-    if(!last||!first)continue;
-
-    // Amount: use the last non-zero $X.XX on the ID line (AMOUNT column) if present
-    const lineAmts=[...line.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
-    const lastAmt=lineAmts.filter(a=>a>0).pop();
-    let total=0;
-    if(lastAmt){
-      total=lastAmt;
-    } else {
-      // Sum component amounts from all lines in this employee's block
-      for(let j=li;j<nextLi;j++){
-        const amts=[...lines[j].matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
-        for(const a of amts)if(a>0)total=Math.round((total+a)*100)/100;
-      }
+    const amounts=amtBuckets.flat();
+    for(let k=0;k<lastNames.length;k++){
+      const last=lastNames[k],first=firstNames[k]||"",amount=amounts[k]||0;
+      if(last&&amount>0)R.push({name:`${last}, ${first}`,amount,detail:"Medical"});
     }
-    if(total>0)R.push({name:`${last}, ${first}`,amount:total,detail:"Medical"});
   }
   return R;
 }
