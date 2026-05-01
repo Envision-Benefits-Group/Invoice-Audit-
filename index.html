@@ -120,7 +120,7 @@ async function epdf(file,carrier){
     Object.entries(lm).sort(([a],[b])=>+b-+a).forEach(([,its])=>{const ln=its.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ").trim();if(ln)allLines.push(ln);});
   }
   const text=allLines.join("\n");
-  if(carrier==="legalshield")return pLegalShield(text);
+  if(carrier==="legalshield"){window._lsDebug=text;return pLegalShield(text);}
   return pPdfGeneric(text);
 }
 function niIdx(x,xArr){let b=-1,bd=Infinity;for(let i=0;i<xArr.length;i++){const d=Math.abs(x-xArr[i]);if(d<bd){bd=d;b=i}}return b}
@@ -264,7 +264,7 @@ function render(){
       for(const d of discs){const cls=d.st==="DISCREPANCY"?"disc":d.fg&&d.fg.includes("Name")?"warn":"";h+=`<tr class="${cls}"><td>${d.cr}</td><td>${d.in}</td><td>${d.en}${d.fg&&d.fg.includes("Name")?'<span class="nflag">&#9888; name variation</span>':""}</td><td>${d.sc||"&mdash;"}</td><td class="mono">${d.ia.toFixed(2)}</td><td class="mono">${d.ea.toFixed(2)}</td><td class="mono" style="font-weight:700;color:${d.v>0?"#c62828":d.v<0?"#1565c0":"inherit"}">${d.v>0?"+":""}${d.v.toFixed(2)}</td><td style="font-size:11px;max-width:200px">${d.fg||""}</td></tr>`}
       h+=`</tbody></table></div></div>`;
     }
-    h+=`<div class="card" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn bp" id="dlXl">&#8595; Download Excel report</button><button class="btn bs" id="nw">Start new audit</button></div>`;
+    h+=`<div class="card" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn bp" id="dlXl">&#8595; Download Excel report</button><button class="btn bs" id="dlLsDbg">&#8595; Debug: raw extracted text</button><button class="btn bs" id="nw">Start new audit</button></div>`;
   }
   h+=`<div class="footer">Envision Benefits Group &nbsp;|&nbsp; envisionbenefitsgroup.com &nbsp;|&nbsp; (844) 761-1100<br>Invoice Audit Tool v2.0 &mdash; SOLA Module: Benefits CRM &amp; Renewal Operations Suite</div>`;
   a.innerHTML=h;
@@ -296,6 +296,7 @@ function bind(){
   if(S.step===4){
     $("nw")?.addEventListener("click",()=>{S={step:1,mo:3,yr:2026,cl:"",cf:null,cfs:[],proc:false,prog:"",err:null,res:null};render()});
     $("dlXl")?.addEventListener("click",dlXl);
+    $("dlLsDbg")?.addEventListener("click",()=>{const b=new Blob([window._lsDebug||"(empty)"],{type:"text/plain"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="legalshield_raw_debug.txt";a.click();URL.revokeObjectURL(u)});
   }
 }
 
