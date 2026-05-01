@@ -114,13 +114,18 @@ async function epdf(file,carrier){
     return pAetna(allItems);
   }
   const allLines=[];
+  const rawDbg=[];
   for(let i=1;i<=pdf.numPages;i++){
     const page=await pdf.getPage(i);const content=await page.getTextContent();const lm={};
-    for(const it of content.items){const y=Math.round(it.transform[5]);if(!lm[y])lm[y]=[];lm[y].push({x:it.transform[4],s:it.str});}
+    rawDbg.push(`=== PAGE ${i} (${content.items.length} items) ===`);
+    for(const it of content.items){
+      rawDbg.push(`  str=${JSON.stringify(it.str)} x=${Math.round(it.transform[4])} y=${Math.round(it.transform[5])}`);
+      const y=Math.round(it.transform[5]);if(!lm[y])lm[y]=[];lm[y].push({x:it.transform[4],s:it.str});
+    }
     Object.entries(lm).sort(([a],[b])=>+b-+a).forEach(([,its])=>{const ln=its.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ").trim();if(ln)allLines.push(ln);});
   }
   const text=allLines.join("\n");
-  if(carrier==="legalshield"){window._lsDebug=text;return pLegalShield(text);}
+  if(carrier==="legalshield"){window._lsDebug=rawDbg.join("\n")+"\n\n=== JOINED LINES ===\n"+text;return pLegalShield(text);}
   return pPdfGeneric(text);
 }
 function niIdx(x,xArr){let b=-1,bd=Infinity;for(let i=0;i<xArr.length;i++){const d=Math.abs(x-xArr[i]);if(d<bd){bd=d;b=i}}return b}
