@@ -180,16 +180,23 @@ function pAetna(items){
   return R;
 }
 function pLegalShield(text){
-  // Format: MembershipNumber(8-12 digits)  LAST, FIRST  $amount
-  // Each employee may appear twice (LegalShield line + IDShield line).
-  // Dedup/sum happens in runAudit after parsing.
+  // Format per line: [MembershipNumber]  LAST, FIRST  $amount
+  // Handles ALL CAPS or Title Case names. Membership# is optional on the line.
+  // Each employee may appear twice (LegalShield + IDShield lines); dedup in runAudit.
   const R=[];
   for(const ln of text.split("\n")){
-    const m=ln.trim().match(/^(\d{8,12})\s+([A-Z][A-Z',\-\s]+?)\s+\$(\d[\d,]*\.\d{2})/);
-    if(!m)continue;
-    const name=m[2].trim();
-    if(!name.includes(","))continue;
-    R.push({name,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Legal"});
+    const s=ln.trim();
+    if(!s)continue;
+    // Find dollar amount anywhere on line ($20.26 or $ 20.26)
+    const amtM=s.match(/\$\s*(\d[\d,]*\.\d{2})/);
+    if(!amtM)continue;
+    const amt=parseFloat(amtM[1].replace(/,/g,""));
+    if(amt<=0)continue;
+    // Name = everything before the $, with leading membership# (8+ digits) stripped
+    const before=s.slice(0,s.indexOf(amtM[0])).trim().replace(/^\d{8,}\s+/,"").trim();
+    if(!before.includes(","))continue;   // must have comma (LAST, FIRST)
+    if(!/^[A-Za-z]/.test(before))continue; // must start with a letter
+    R.push({name:before,amount:amt,detail:"Legal"});
   }
   return R;
 }
