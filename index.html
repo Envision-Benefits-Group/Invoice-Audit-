@@ -97,72 +97,83 @@ for(const[n,rw]of Object.entries(bn)){if(!mt.has(n)){const t=rw.reduce((s,r)=>s+
 async function epdf(file,carrier){
   const ab=await file.arrayBuffer();
   const pdf=await pdfjsLib.getDocument({data:new Uint8Array(ab)}).promise;
+  if(carrier==="aetna"){
+    // Collect raw items with x,y coordinates for positional column matching
+    const allItems=[],dbgLines=[];
+    for(let pg=1;pg<=pdf.numPages;pg++){
+      const page=await pdf.getPage(pg);const content=await page.getTextContent();const lm={};
+      for(const it of content.items){
+        const s=it.str.trim();if(!s)continue;
+        const x=Math.round(it.transform[4]),y=Math.round(it.transform[5]);
+        allItems.push({s,x,y,pg});
+        if(!lm[y])lm[y]=[];lm[y].push({x,s});
+      }
+      Object.entries(lm).sort(([a],[b])=>+b-+a).forEach(([,its])=>{const ln=its.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ").trim();if(ln)dbgLines.push(ln);});
+    }
+    window._aetnaDebug=dbgLines.join("\n");
+    return pAetna(allItems);
+  }
   const allLines=[];
   for(let i=1;i<=pdf.numPages;i++){
-    const page=await pdf.getPage(i);
-    const content=await page.getTextContent();
-    const lm={};
-    for(const item of content.items){
-      const y=Math.round(item.transform[5]);
-      if(!lm[y])lm[y]=[];
-      lm[y].push({x:item.transform[4],s:item.str});
-    }
-    Object.entries(lm).sort(([a],[b])=>Number(b)-Number(a)).forEach(([,items])=>{
-      const ln=items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ").trim();
-      if(ln)allLines.push(ln);
-    });
+    const page=await pdf.getPage(i);const content=await page.getTextContent();const lm={};
+    for(const it of content.items){const y=Math.round(it.transform[5]);if(!lm[y])lm[y]=[];lm[y].push({x:it.transform[4],s:it.str});}
+    Object.entries(lm).sort(([a],[b])=>+b-+a).forEach(([,its])=>{const ln=its.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ").trim();if(ln)allLines.push(ln);});
   }
-  const text=allLines.join("\n");
-  if(carrier==="aetna"){window._aetnaDebug=text;return pAetna(text)}
-  return pPdfGeneric(text);
+  return pPdfGeneric(allLines.join("\n"));
 }
-function pAetna(text){
-  // The Aetna PDF is a landscape/rotated table. pdf.js groups text by y-coordinate,
-  // producing one line per TABLE ROW (not per employee column). Structure per page:
-  //   [bare $X.XX lines]          ← per-employee AMOUNT totals, no label
-  //   AMOUNT $X.XX $X.XX ...      ← remaining per-employee totals with label
-  //   VIS AMOUNT / VIS TYPE / DENT AMOUNT / DENT TYPE  (empty)
-  //   MED AMOUNT $0.00 ...        (component detail, skip)
-  //   MEDTYPE / FAMILY CODE / dates / CATEGORY / EMPL ID / MI
-  //   FIRST NAME fn1 fn2 fn3 ...
-  //   [page number digit]
-  //   CURRENT INFORCE CHARGES LAST NAME ln1 ln2 ln3 ...
-  //   [page footer]
-  const lines=text.split("\n").map(l=>l.trim()).filter(Boolean);
+function niIdx(x,xArr){let b=-1,bd=Infinity;for(let i=0;i<xArr.length;i++){const d=Math.abs(x-xArr[i]);if(d<bd){bd=d;b=i}}return b}
+function pAetna(items){
+  // items: [{s,x,y,pg}] — raw pdf.js text items with x,y coordinates.
+  // Aetna invoice is a landscape table: each column = one employee, each row = one field.
+  // EMPL IDs (*****XXXX) give the definitive x-positions for each employee column.
+  // AMOUNT values (per-employee totals) are matched to those x-positions regardless of
+  // which y-group they fall in — this handles the two-line AMOUNT split correctly.
+  const HDRS=new Set("CURRENT,INFORCE,CHARGES,LAST,NAME,FIRST,EMPL,ID,MI,EFF,DATE,CATEGORY,FAMILY,CODE,MEDTYPE,MED,AMOUNT,VIS,DENT,TYPE,RETROACTIVITY,TOTAL,TRANS,CATRGORY,PLAN,PRODUCT".split(","));
+  const pages={};
+  for(const it of items){if(!pages[it.pg])pages[it.pg]={};if(!pages[it.pg][it.y])pages[it.pg][it.y]=[];pages[it.pg][it.y].push(it);}
   const R=[];
-  for(let i=0;i<lines.length;i++){
-    const lnm=lines[i].match(/CURRENT INFORCE CHARGES LAST NAME\s+(.*)/);
-    if(!lnm)continue;
-    const lastNames=lnm[1].trim().split(/\s+/).filter(w=>w.length>1&&/^[A-Za-z]/.test(w));
-    if(!lastNames.length)continue;
-    // Find FIRST NAME line scanning backward (within 15 lines)
-    let firstNames=[];
-    for(let j=i-1;j>=Math.max(0,i-15);j--){
-      const fnm=lines[j].match(/^FIRST NAME\s+(.*)/);
-      if(fnm){firstNames=fnm[1].trim().split(/\s+/).filter(w=>w.length>0);break}
+  for(const pgRows of Object.values(pages)){
+    const rows=Object.entries(pgRows).map(([y,its])=>({y:+y,its:its.sort((a,b)=>a.x-b.x)})).sort((a,b)=>b.y-a.y);
+    // Require CURRENT INFORCE CHARGES LAST NAME row (skips summary/retroactivity pages)
+    const lnRow=rows.find(r=>{const t=r.its.map(i=>i.s).join(" ");return/CURRENT INFORCE CHARGES/.test(t)&&/LAST.?NAME/.test(t)});
+    if(!lnRow)continue;
+    // EMPL IDs as authoritative employee column x-positions
+    const idRow=rows.find(r=>r.its.some(i=>/\*{5}\d{4}/.test(i.s)));
+    if(!idRow)continue;
+    const empX=idRow.its.filter(i=>/\*{5}\d{4}/.test(i.s)).map(i=>i.x);
+    if(!empX.length)continue;
+    const n=empX.length;
+    // Closest-wins assignment: for each candidate item, assign to nearest empX column;
+    // keep only the item with smallest distance for each column slot.
+    function assign(candidates,arr){
+      const dist=new Array(n).fill(Infinity);
+      for(const ci of candidates){const idx=niIdx(ci.x,empX);if(idx<0)continue;const d=Math.abs(ci.x-empX[idx]);if(d<dist[idx]){dist[idx]=d;arr[idx]=ci.s;}}
     }
-    // Collect per-employee total amounts scanning backward.
-    // Stop at a page footer ("Page N of") or previous LAST NAME section — prevents
-    // summary totals from pages 1-2 bleeding into page 3's employee amounts.
-    // unshift preserves left-to-right employee order after the backward scan.
-    const amtBuckets=[];
-    for(let j=i-1;j>=0;j--){
-      const ln=lines[j];
-      if(/CURRENT INFORCE CHARGES LAST NAME/.test(ln))break;
-      if(/\bPage\s+\d+\s+of\b/.test(ln))break;  // page footer boundary
-      if(/^AMOUNT\s+\$/.test(ln)){
-        const vals=[...ln.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
-        if(vals.length)amtBuckets.unshift(vals);
-      } else if(/^\$[\d,]+\.\d{2}/.test(ln)&&!/\b(?:MED|VIS|DENT)\b/.test(ln)){
-        const vals=[...ln.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
-        if(vals.length<=10)amtBuckets.unshift(vals);
+    // Last names: alpha words in lnRow that are not header keywords
+    const lastNames=new Array(n).fill("");
+    assign(lnRow.its.filter(i=>/^[A-Z][A-Za-z'-]+$/.test(i.s)&&!HDRS.has(i.s.toUpperCase())),lastNames);
+    // First names
+    const firstNames=new Array(n).fill("");
+    const fnRow=rows.find(r=>r.y!==lnRow.y&&/\bFIRST\b/.test(r.its.map(i=>i.s).join(" ")));
+    if(fnRow)assign(fnRow.its.filter(i=>/^[A-Za-z]/.test(i.s)&&!HDRS.has(i.s.toUpperCase())),firstNames);
+    // Amounts: collect $X.XX items from AMOUNT-labeled or bare-$ rows (not MED/VIS/DENT)
+    // Match each dollar item to its employee column by x-proximity.
+    const amtMap=new Array(n).fill(0);const amtDist=new Array(n).fill(Infinity);
+    for(const row of rows){
+      if(row.y===lnRow.y)continue;
+      const rowTxt=row.its.map(i=>i.s).join(" ");
+      if(/\b(MED|VIS|DENT)\b/.test(rowTxt))continue;
+      const dlr=row.its.filter(i=>/^\$[\d,]+\.\d{2}$/.test(i.s));
+      if(!dlr.length)continue;
+      const nonDlr=row.its.filter(i=>!/^\$/.test(i.s)&&!/^\d+$/.test(i.s)).map(i=>i.s).join(" ").trim();
+      if(nonDlr&&!/^AMOUNT$/i.test(nonDlr))continue;
+      for(const di of dlr){
+        const idx=niIdx(di.x,empX);if(idx<0)continue;
+        const d=Math.abs(di.x-empX[idx]),v=parseFloat(di.s.replace(/[$,]/g,""));
+        if(d<amtDist[idx]){amtDist[idx]=d;amtMap[idx]=v;}
       }
     }
-    const amounts=amtBuckets.flat();
-    for(let k=0;k<lastNames.length;k++){
-      const last=lastNames[k],first=firstNames[k]||"",amount=amounts[k]||0;
-      if(last&&amount>0)R.push({name:`${last}, ${first}`,amount,detail:"Medical"});
-    }
+    for(let k=0;k<n;k++){if(lastNames[k]&&amtMap[k]>0)R.push({name:`${lastNames[k]}, ${firstNames[k]}`,amount:amtMap[k],detail:"Medical"});}
   }
   return R;
 }
@@ -226,7 +237,7 @@ function render(){
     const discs=r.filter(x=>x.st!=="Match").sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
     if(discs.length){
       h+=`<div class="card"><h3>Discrepancies &amp; flags <span class="badge bd">${r.filter(x=>x.st==="DISCREPANCY").length} items</span></h3><div style="overflow-x:auto">
-      <table class="t"><thead><tr><th>Carrier</th><th>Invoice name</th><th>Census name</th><th>Score</th><th>Invoice $</th><th>Expected $</th><th>Variance</th><th>Issue</th></tr></thead><tbody>`;
+      <table class="t"><thead><tr><th>Carrier</th><th>Invoice name</th><th>Enrollment Census name</th><th>Score</th><th>Insurance Carrier Invoice $</th><th>Census Enrollment $</th><th>Variance</th><th>Issue</th></tr></thead><tbody>`;
       for(const d of discs){const cls=d.st==="DISCREPANCY"?"disc":d.fg&&d.fg.includes("Name")?"warn":"";h+=`<tr class="${cls}"><td>${d.cr}</td><td>${d.in}</td><td>${d.en}${d.fg&&d.fg.includes("Name")?'<span class="nflag">&#9888; name variation</span>':""}</td><td>${d.sc||"&mdash;"}</td><td class="mono">${d.ia.toFixed(2)}</td><td class="mono">${d.ea.toFixed(2)}</td><td class="mono" style="font-weight:700;color:${d.v>0?"#c62828":d.v<0?"#1565c0":"inherit"}">${d.v>0?"+":""}${d.v.toFixed(2)}</td><td style="font-size:11px;max-width:200px">${d.fg||""}</td></tr>`}
       h+=`</tbody></table></div></div>`;
     }
@@ -297,7 +308,7 @@ function dlXl(){
   const sum=[["Carrier","On Invoice","In Census","Matches","Discrepancies","Net Variance ($)"]];
   for(const c of crs){const cr=S.res.filter(x=>x.cr===c);sum.push([c,cr.filter(x=>x.in!=="NOT ON INVOICE").length,cr.filter(x=>x.en!=="NOT FOUND").length,cr.filter(x=>x.st==="Match").length,cr.filter(x=>x.st==="DISCREPANCY").length,+cr.reduce((s,x)=>s+x.v,0).toFixed(2)])}
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Summary");
-  const det=[["Carrier","Invoice Name","Census Name","Match Score","Invoice Amount","Expected Amount","Variance","Status","Notes"]];
+  const det=[["Carrier","Invoice name","Enrollment Census name","Score","Insurance Carrier Invoice $","Census Enrollment $","Variance","Issue","Notes"]];
   for(const r of S.res)det.push([r.cr,r.in,r.en,r.sc,r.ia,r.ea,r.v,r.st,r.fg||""]);
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(det),"Detail");
   XLSX.writeFile(wb,`${(S.cl||"audit").replace(/[^a-z0-9]/gi,"_")}_${MO[S.mo]}_${S.yr}_audit.xlsx`);
