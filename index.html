@@ -142,12 +142,14 @@ function pAetna(text){
       if(fnm){firstNames=fnm[1].trim().split(/\s+/).filter(w=>w.length>0);break}
     }
     // Collect per-employee total amounts scanning backward.
-    // Gather "AMOUNT $X..." lines and bare "$X..." lines (not MED/VIS/DENT headers).
-    // unshift preserves forward (left-to-right employee) order after backward scan.
+    // Stop at a page footer ("Page N of") or previous LAST NAME section — prevents
+    // summary totals from pages 1-2 bleeding into page 3's employee amounts.
+    // unshift preserves left-to-right employee order after the backward scan.
     const amtBuckets=[];
     for(let j=i-1;j>=0;j--){
       const ln=lines[j];
       if(/CURRENT INFORCE CHARGES LAST NAME/.test(ln))break;
+      if(/\bPage\s+\d+\s+of\b/.test(ln))break;  // page footer boundary
       if(/^AMOUNT\s+\$/.test(ln)){
         const vals=[...ln.matchAll(/\$([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,"")));
         if(vals.length)amtBuckets.unshift(vals);
