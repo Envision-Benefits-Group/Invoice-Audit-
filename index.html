@@ -75,7 +75,7 @@ const CA=[
 {v:"highmark",l:"Highmark BCBSWNY",ec:"Highmark",pt:null,w:false},
 {v:"guardian",l:"Guardian",ec:"Guardian",pt:null,w:false},
 {v:"colonial",l:"Colonial Life (STD)",ec:"Colonial Life",pt:"Voluntary Short Term Disability",w:true},
-{v:"legalshield",l:"LegalShield / IDShield",ec:"IDShield",pt:"Legal",w:true},
+{v:"legalshield",l:"LegalShield / IDShield",ec:"LegalShield",pt:"Legal",w:false},
 {v:"beni",l:"Beni Solutions / Options Plus",ec:"Options Plus",pt:"Medical",w:false},
 {v:"other",l:"Other Carrier",ec:null,pt:null,w:false}
 ];
@@ -119,7 +119,9 @@ async function epdf(file,carrier){
     for(const it of content.items){const y=Math.round(it.transform[5]);if(!lm[y])lm[y]=[];lm[y].push({x:it.transform[4],s:it.str});}
     Object.entries(lm).sort(([a],[b])=>+b-+a).forEach(([,its])=>{const ln=its.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ").trim();if(ln)allLines.push(ln);});
   }
-  return pPdfGeneric(allLines.join("\n"));
+  const text=allLines.join("\n");
+  if(carrier==="legalshield")return pLegalShield(text);
+  return pPdfGeneric(text);
 }
 function niIdx(x,xArr){let b=-1,bd=Infinity;for(let i=0;i<xArr.length;i++){const d=Math.abs(x-xArr[i]);if(d<bd){bd=d;b=i}}return b}
 function pAetna(items){
@@ -174,6 +176,20 @@ function pAetna(items){
       }
     }
     for(let k=0;k<n;k++){if(lastNames[k]&&amtMap[k]>0)R.push({name:`${lastNames[k]}, ${firstNames[k]}`,amount:amtMap[k],detail:"Medical"});}
+  }
+  return R;
+}
+function pLegalShield(text){
+  // Format: MembershipNumber(8-12 digits)  LAST, FIRST  $amount
+  // Each employee may appear twice (LegalShield line + IDShield line).
+  // Dedup/sum happens in runAudit after parsing.
+  const R=[];
+  for(const ln of text.split("\n")){
+    const m=ln.trim().match(/^(\d{8,12})\s+([A-Z][A-Z',\-\s]+?)\s+\$(\d[\d,]*\.\d{2})/);
+    if(!m)continue;
+    const name=m[2].trim();
+    if(!name.includes(","))continue;
+    R.push({name,amount:parseFloat(m[3].replace(/,/g,"")),detail:"Legal"});
   }
   return R;
 }
