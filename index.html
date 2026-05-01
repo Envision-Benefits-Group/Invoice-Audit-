@@ -296,7 +296,13 @@ function bind(){
   if(S.step===4){
     $("nw")?.addEventListener("click",()=>{S={step:1,mo:3,yr:2026,cl:"",cf:null,cfs:[],proc:false,prog:"",err:null,res:null};render()});
     $("dlXl")?.addEventListener("click",dlXl);
-    $("dlLsDbg")?.addEventListener("click",()=>{const b=new Blob([window._lsDebug||"(empty)"],{type:"text/plain"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="legalshield_raw_debug.txt";a.click();URL.revokeObjectURL(u)});
+    $("dlLsDbg")?.addEventListener("click",()=>{
+      let out;
+      if(window._lsDebug===undefined)out="DEBUG: LegalShield path was NEVER REACHED.\nThe invoice file was not identified as the LegalShield carrier.\nCheck that the file was assigned to 'LegalShield / IDShield' in the carrier dropdown (step 2).";
+      else if(window._lsDebug==="")out="DEBUG: LegalShield path was reached but NO TEXT was extracted from the PDF.\nThe PDF is likely image-only (scanned) with no selectable text layer.\npdf.js cannot read text from image-only PDFs.";
+      else out=window._lsDebug;
+      const b=new Blob([out],{type:"text/plain"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="legalshield_raw_debug.txt";a.click();URL.revokeObjectURL(u);
+    });
   }
 }
 
