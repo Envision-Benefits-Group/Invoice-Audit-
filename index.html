@@ -77,6 +77,7 @@ const CA=[
 {v:"guardian",l:"Guardian",ec:"Guardian",pt:null,w:false},
 {v:"colonial",l:"Colonial Life (STD)",ec:"Colonial Life",pt:"Voluntary Short Term Disability",w:true},
 {v:"legalshield",l:"LegalShield / IDShield",ec:"LegalShield",pt:"Legal",w:false},
+{v:"unum",l:"Unum",ec:"Unum",pt:null,w:false},
 {v:"beni",l:"Beni Solutions / Options Plus",ec:"Options Plus",pt:"Medical",w:false},
 {v:"other",l:"Other Carrier",ec:null,pt:null,w:false}
 ];
@@ -122,6 +123,7 @@ async function epdf(file,carrier){
   }
   const text=allLines.join("\n");
   if(carrier==="legalshield")return pLegalShield(text);
+  if(carrier==="unum"){window._unumDebug=text;return pUnum(text);}
   return pPdfGeneric(text);
 }
 async function edocx(file,carrier){
@@ -223,6 +225,48 @@ function pLegalShield(text){
   }
   return R;
 }
+function unumPt(d){
+  const p=(d||"").toLowerCase();
+  if(/dental/.test(p))return"Dental";
+  if(/vision/.test(p))return"Voluntary Vision";
+  if(/life|ad.?d/.test(p))return"Voluntary Life/AD&D";
+  if(/short.?term|std\b/.test(p))return"Voluntary Short Term Disability";
+  if(/long.?term|ltd\b/.test(p))return"Voluntary Long Term Disability";
+  if(/accident/.test(p))return"Voluntary Accident";
+  if(/critical/.test(p))return"Voluntary Critical Illness";
+  if(/hospital/.test(p))return"Voluntary Hospital Confinement";
+  return null;
+}
+function pUnum(text){
+  const PLAN_HDRS=[
+    [/dental/i,"Dental"],
+    [/vision/i,"Vision"],
+    [/life.*ad.?d|ad.?d.*life/i,"Life/AD&D"],
+    [/short.?term.*dis|std\b/i,"Short Term Disability"],
+    [/long.?term.*dis|ltd\b/i,"Long Term Disability"],
+    [/accident/i,"Accident"],
+    [/critical.*ill/i,"Critical Illness"],
+    [/hospital/i,"Hospital Confinement"]
+  ];
+  const R=[];
+  let plan="";
+  for(const ln of text.split("\n")){
+    const s=ln.trim();if(!s)continue;
+    // Detect plan section header (non-data line containing plan keyword)
+    if(!/^\d/.test(s)&&s.length<100){
+      for(const[pat,name]of PLAN_HDRS){if(pat.test(s)){plan=name;break;}}
+    }
+    // Employee line: LAST, FIRST ... $amount (last dollar value on line is the premium)
+    const allAmts=[...s.matchAll(/\$([\d,]+\.\d{2})/g)];
+    if(!allAmts.length)continue;
+    const amt=parseFloat(allAmts[allAmts.length-1][1].replace(/,/g,""));
+    if(amt<=0)continue;
+    const nameM=s.match(/^([A-Z][A-Za-z'-]+,\s*[A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)?)/);
+    if(!nameM)continue;
+    R.push({name:nameM[1].trim(),amount:amt,detail:plan||"Unknown"});
+  }
+  return R;
+}
 function pPdfGeneric(text){
   const R=[];
   for(const line of text.split("\n")){
@@ -232,7 +276,7 @@ function pPdfGeneric(text){
   return R;
 }
 function pxls(ab){try{const wb=XLSX.read(ab,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});const R=[];let go=false;for(const row of rows){const c=row.map(x=>String(x||"").trim());if(c.some(x=>x==="Name")&&c.some(x=>String(x).includes("Prem"))){go=true;continue}if(go){if(c[1]&&c[1].includes("Total"))break;const nm=c[3]||"";const pr=parseFloat(String(c[6]||"0").replace(/[$,]/g,""))||0;if(nm&&nm!=="None")R.push({name:nm,amount:pr,detail:(c[4]||"")+" - "+(c[5]||"")})}}return R}catch(e){console.error(e);return[]}}
-function gc(fn){const l=fn.toLowerCase();if(l.includes("aetna"))return"aetna";if(l.includes("highmark"))return"highmark";if(l.includes("guardian"))return"guardian";if(l.includes("colonial"))return"colonial";if(l.includes("legal")||l.includes("shield"))return"legalshield";if(l.includes("beni")||l.includes("options"))return"beni";return"other"}
+function gc(fn){const l=fn.toLowerCase();if(l.includes("aetna"))return"aetna";if(l.includes("highmark"))return"highmark";if(l.includes("guardian"))return"guardian";if(l.includes("colonial"))return"colonial";if(l.includes("legal")||l.includes("shield"))return"legalshield";if(l.includes("unum"))return"unum";if(l.includes("beni")||l.includes("options"))return"beni";return"other"}
 
 function render(){
   const a=document.getElementById("app");const s=S;
@@ -287,7 +331,7 @@ function render(){
       for(const d of discs){const cls=d.st==="DISCREPANCY"?"disc":d.fg&&d.fg.includes("Name")?"warn":"";h+=`<tr class="${cls}"><td>${d.cr}</td><td>${d.in}</td><td>${d.en}${d.fg&&d.fg.includes("Name")?'<span class="nflag">&#9888; name variation</span>':""}</td><td>${d.sc||"&mdash;"}</td><td class="mono">${d.ia.toFixed(2)}</td><td class="mono">${d.ea.toFixed(2)}</td><td class="mono" style="font-weight:700;color:${d.v>0?"#c62828":d.v<0?"#1565c0":"inherit"}">${d.v>0?"+":""}${d.v.toFixed(2)}</td><td style="font-size:11px;max-width:200px">${d.fg||""}</td></tr>`}
       h+=`</tbody></table></div></div>`;
     }
-    h+=`<div class="card" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn bp" id="dlXl">&#8595; Download Excel report</button><button class="btn bs" id="nw">Start new audit</button></div>`;
+    h+=`<div class="card" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn bp" id="dlXl">&#8595; Download Excel report</button>${window._unumDebug!==undefined?'<button class="btn bs" id="dlUnumDbg">&#8595; Unum raw text (debug)</button>':''}<button class="btn bs" id="nw">Start new audit</button></div>`;
   }
   h+=`<div class="footer">Envision Benefits Group &nbsp;|&nbsp; envisionbenefitsgroup.com &nbsp;|&nbsp; (844) 761-1100<br>Invoice Audit Tool v2.0 &mdash; SOLA Module: Benefits CRM &amp; Renewal Operations Suite</div>`;
   a.innerHTML=h;
@@ -319,6 +363,7 @@ function bind(){
   if(S.step===4){
     $("nw")?.addEventListener("click",()=>{S={step:1,mo:3,yr:2026,cl:"",cf:null,cfs:[],proc:false,prog:"",err:null,res:null};render()});
     $("dlXl")?.addEventListener("click",dlXl);
+    $("dlUnumDbg")?.addEventListener("click",()=>{const b=new Blob([window._unumDebug||"(empty)"],{type:"text/plain"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="unum_raw_debug.txt";a.click();URL.revokeObjectURL(u)});
   }
 }
 
@@ -340,7 +385,12 @@ async function runAudit(){
       if(!recs||!recs.length){S.prog=`No data found in ${cf.file.name} — check format`;render();continue}
       if(cf.t==="legalshield"){const byN={};for(const r of recs){const k=nn(r.name);if(!byN[k])byN[k]={name:r.name,amount:0};byN[k].amount+=r.amount}recs=Object.values(byN)}
       S.prog=`Reconciling ${recs.length} ${cfg.l} records...`;render();
-      all.push(...rec(cfg.l,recs,enr,{ec:cfg.ec,pt:cfg.pt,ay:S.yr,am:S.mo+1,wc:cfg.w,wk}));
+      if(cf.t==="unum"){
+        const byPlan={};for(const r of recs){const k=r.detail||"Unknown";if(!byPlan[k])byPlan[k]=[];byPlan[k].push(r);}
+        for(const[pn,pr]of Object.entries(byPlan)){all.push(...rec(cfg.l+" ("+pn+")",pr,enr,{ec:cfg.ec,pt:unumPt(pn),ay:S.yr,am:S.mo+1,wc:false,wk}));}
+      } else {
+        all.push(...rec(cfg.l,recs,enr,{ec:cfg.ec,pt:cfg.pt,ay:S.yr,am:S.mo+1,wc:cfg.w,wk}));
+      }
     }
     S.res=all;S.step=4;
   }catch(e){S.err=`Audit failed: ${e.message}`;console.error(e)}
